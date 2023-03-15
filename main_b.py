@@ -8,47 +8,25 @@ import sys
 import mysql.connector
 
 
-# commit: refactoring: update databaseconn class impl Sec48
+# commit: refactoring: implemented mysql Sec48
 
 # refactoring: update database class for mysql db connection
 # note: mysql uses %s while sqlite need ? for placeholder in queries
 # mysql user cursor.execute while sqlite uses conn.execute!!!
 # cursor.execute(sql-query) and result=cursor.fetchall() # mysql specific, different from sqlite
 class DatabaseConnection:
-    """
-    class to handle all mysql database operations,
-     will take the query and query params as args to constructor
-    """
-    def __init__(self,host='localhost',user='root',password='pythoncourse',
-                 database='school',query='',q_params=())->None:
-        self.query=query
-        self.q_params=q_params
-        self.connection=mysql.connector.connect(host=host,user=user,
-                                           password=password,database=database)
-        self.cursor=self.connection.cursor()
-   
-    def get_result(self)->list:
-        self.cursor.execute(self.query,self.q_params)
-        result=self.cursor.fetchall()
-        self.close()
-        return(result)
+    def __init__(self,host='localhost',user='root',password='pythoncourse',database='school'):
+        self.host=host
+        self.user=user
+        self.password=password
+        self.database=database
     
-    def update(self)->None:
-        self.cursor.execute(self.query,self.q_params)
-        self.connection.commit()        
-        self.close()
-
-    def delete(self)->None:
-        self.update()
-
-    def add(self)->None:
-        self.update()
-
-    def close(self):
-        self.cursor.close()
-        self.connection.close()
-
-
+    def connect(self):
+        connection=mysql.connector.connect(host=self.host,user=self.user,
+                                           password=self.password,database=self.database)
+        return connection
+    
+       
 
 # QMainWindow provides menu bar status bar and stuff!!!
 class MainWindow(QMainWindow):
@@ -125,16 +103,17 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def load_data(self):
-        query='SELECT * FROM students'
-        result=DatabaseConnection(query=query).get_result()
-
+        connection=DatabaseConnection().connect()
+        cursor=connection.cursor() # mysql user cursor.execute while sqlite uses conn.execute!!!
+        cursor.execute('SELECT * FROM students') # its a cursor obj!!!        
+        result=cursor.fetchall() # mysql specific, different from sqlite
         self.table.setRowCount(0) # to reset the table so rows are not duplicated when resizing window etc.!!!
         for row_num,row_data in enumerate(result):
             self.table.insertRow(row_num)
             for colum_num,data in enumerate(row_data):
                 # print(row_data)
                 self.table.setItem(row_num,colum_num,QTableWidgetItem(str(data)))
-
+        connection.close()
 
     def insert(self):
         dialog=InsertDialog() # another class we create
@@ -203,12 +182,17 @@ class EditDialog(QDialog):
         self.setLayout(layout)
 
     def update_student(self):
-        query='UPDATE students SET name = %s, course = %s, mobile = %s WHERE id = %s'
-        qparam=(self.student_name.text(),
-                self.course_name.itemText(self.course_name.currentIndex()),
-                self.mobile.text(),
-                self.student_id)
-        DatabaseConnection(query=query,q_params=qparam).update()
+        connection=DatabaseConnection().connect()
+        cursor=connection.cursor()
+        # mysql uses %s while sqlite need ? for placeholder in queries
+        cursor.execute('UPDATE students SET name = %s, course = %s, mobile = %s WHERE id = %s',
+                       (self.student_name.text(),
+                        self.course_name.itemText(self.course_name.currentIndex()),
+                        self.mobile.text(),
+                        self.student_id))
+        connection.commit()
+        cursor.close()
+        connection.close()
 
         # refresh table
         main_window.load_data() 
@@ -247,10 +231,12 @@ class DeleteDialog(QDialog):
         index=main_window.table.currentRow()
         student_id=main_window.table.item(index,0).text()
 
-        query='DELETE from students WHERE id = %s'
-        qparam=(student_id,)
-        DatabaseConnection(query=query,q_params=qparam).delete()
-
+        connection=DatabaseConnection().connect()
+        cursor=connection.cursor()
+        cursor.execute('DELETE from students WHERE id = %s',(student_id,))
+        connection.commit()
+        cursor.close()
+        connection.close()
         main_window.load_data()
 
         self.close()
@@ -300,12 +286,16 @@ class InsertDialog(QDialog):
 
 
     def add_student(self):
-        query='INSERT INTO students (name,course,mobile) VALUES (%s,%s,%s)'
-        qparam=(self.student_name.text(),
-                self.course_name.itemText(self.course_name.currentIndex()),
-                self.mobile.text())
-        DatabaseConnection(query=query,q_params=qparam).add()
-
+        name=self.student_name.text()
+        course=self.course_name.itemText(self.course_name.currentIndex())
+        mobile=self.mobile.text()
+        connection=DatabaseConnection().connect()
+        cursor=connection.cursor()
+        cursor.execute('INSERT INTO students (name,course,mobile) VALUES (%s,%s,%s)',
+                      (name,course,mobile))
+        connection.commit()
+        cursor.close()
+        connection.close()
         main_window.load_data()
 
 
@@ -332,16 +322,21 @@ class SearchDialog(QDialog):
         name=self.search_box.text()
         # print(f'Search: {name}')
 
-        query='SELECT * FROM students WHERE name=%s'
-        qparam=(name,)
-        result=DatabaseConnection(query=query,q_params=qparam).get_result()
-        print(result)
+        # connection=DatabaseConnection().connect()
+        # cursor=connection.cursor()
+        # cursor.execute('SELECT * FROM students WHERE name=%s',(name,))
+        # result=cursor.fetchall()
+        # rows=list(result)
+        # print(rows)
 
         items=main_window.table.findItems(name,Qt.MatchFlag.MatchFixedString)
         for item in items:
             # print(item) # this is a table item object!!!
             # to set the name column as selected
             main_window.table.item(item.row(),1).setSelected(True)
+
+        # cursor.close()
+        # connection.close()
 
 
 
